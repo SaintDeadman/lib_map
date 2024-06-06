@@ -11,14 +11,18 @@ uint8_t insert_mock(void* obj, const uint8_t* key, const uint8_t* value)
     return 1;
 }
 
-void find_mock(void* obj) 
+uint8_t* find_mock(void* obj, const uint8_t* key) 
 {
     (void)(obj);
+    (void)(key);
     printf("find function is undefined\n\r");
+    return NULL;
 }
 
-void erase_mock(void* obj) 
+uint8_t erase_mock(void* obj, const uint8_t* key) 
 {
     (void)(obj);
+    (void)(key);
     printf("erase function is undefined\n\r");
+    return 1;
 }

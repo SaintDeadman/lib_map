@@ -54,6 +54,14 @@ int main()
     if(insert_simple(test_map, test_key, test_val)) {
         printf("can't insert\n\r"); 
     }
+
+    /* test find */
+    if(find_simple(test_map, test_key)){
+        printf("finded\n");
+    }
+
+
+
     free_simple_map(test_map);
 
 
