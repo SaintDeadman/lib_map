@@ -6,28 +6,35 @@
 #define ENTRY_FREE      0
 #define ENTRY_OCCUPIED  1
 #define ENTRY_DELETED   2
-#define ENTRY_BUSY      3
 
-typedef struct map_simple {
-    int mem_size;
-    int key_size;
-    int val_size;
-    void* mem;
-    uint32_t* sync_data;
-    _Sync int data;
-} map_simple_t;
 
 typedef struct {
-    uint32_t* info;
+    uint32_t state;
+    uint32_t used;
+} entry_info_t;
+
+typedef struct {
+    entry_info_t* info;
     uint8_t* key;
     uint8_t* value;
 } entry_t;
+
+typedef struct map_simple {
+    uint32_t mem_size;
+    uint32_t key_size;
+    uint32_t val_size;
+    void* mem;
+    entry_info_t* sync_data;
+    _Sync uint32_t count;
+} map_simple_t;
+
+
 
 
 /*===================================================
             create
 ======================================================*/
-map_simple_ptr new_simple_map(size_t map_size, size_t key_size, size_t val_size){
+map_simple_ptr new_simple_map(uint32_t map_size, uint32_t key_size, uint32_t val_size){
     /*create struct*/
     map_simple_ptr  map = (map_simple_ptr)malloc(sizeof(map_simple_t));
     if(!map) return NULL;
@@ -37,26 +44,27 @@ map_simple_ptr new_simple_map(size_t map_size, size_t key_size, size_t val_size)
     map->mem_size = map_size;
     map->key_size = key_size;
     map->val_size = val_size;
+    map->count = 0;
     map->mem = calloc(map_size, map->key_size + map->val_size);
     if(!map->mem) {
         free(map);
-        return 0;
+        return NULL;
     }
-    map->sync_data = calloc(map_size, sizeof(uint32_t));
+    map->sync_data = calloc(map_size, sizeof(entry_info_t));
     if(!map->sync_data) {
         free(map->mem);
         free(map);
-        return 0;
+        return NULL;
     }
 
     return map;
 }
 
 void free_simple_map(map_simple_ptr map) {
+    free(map->sync_data);
     free(map->mem);
     free(map);
 }
-
 
 /*=============================================================*/
 static entry_t get_entry(map_simple_ptr map, uint64_t index) {
@@ -88,8 +96,8 @@ static void print_key(map_simple_ptr map, uint64_t index) {
 /*===================================================
                     HASH FUNCTION
 ===================================================*/
-static uint64_t hash_func(const uint8_t* key, size_t key_size) {
-    return (uint64_t)(*((uint64_t*)key));
+static uint32_t hash_func(const uint8_t* key, size_t key_size) {
+    return (uint32_t)(*((uint32_t*)key));
 }
 
 
@@ -97,10 +105,9 @@ static uint64_t hash_func(const uint8_t* key, size_t key_size) {
                     API
 ======================================================*/
 uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* value) {
-    uint64_t hash = hash_func(key, obj->key_size);
-    uint64_t cur_index =  hash % obj->mem_size;
+    uint32_t hash = hash_func(key, obj->key_size);
+    uint32_t cur_index =  (uint32_t)hash % (uint32_t)obj->mem_size;
     uint64_t i;
-    
     for(i = 0; i < obj->mem_size; i++)
     { 
         /*get index*/
@@ -108,19 +115,34 @@ uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* val
 
         /*get entry*/
         entry_t entry = get_entry(obj, cur_index);
+        
+        if( _Sync_check_and_set(&entry.info->used, 0,1)) {
+            /*check duplicate*/
+            /*need filter of Blum*/
+            if(entry.info->state == ENTRY_OCCUPIED) {
+                if(!memcmp(entry.key, key, obj->key_size)) {
+                    entry.info->used = 0;
+                    return 2;
+                }
+                entry.info->used = 0;
+                continue; 
+            }
 
-        /*check duplicate*/
-        /*need filter of Blum*/
-        if(*entry.info == ENTRY_OCCUPIED)
-            if(!memcmp(entry.key, key, obj->key_size)) return 1; 
+            /*try to write*/
+            if( entry.info->state == ENTRY_FREE || entry.info->state == ENTRY_DELETED ) {
+                save_entry(obj, entry, key, value);
+                _Sync_increment(&obj->count);  
+                entry.info->state = ENTRY_OCCUPIED;
+                entry.info->used = 0;
+                
+                //print_entry(obj, cur_index);
+                //print_key(obj, cur_index);
 
-        /*try to write*/
-        if( *entry.info == ENTRY_FREE || *entry.info == ENTRY_DELETED ){
-            save_entry(obj, entry, key, value);
-            print_entry(obj, cur_index);
-            print_key(obj, cur_index);      
-            *entry.info = ENTRY_OCCUPIED;
-            return 0;
+                return 0;
+            }
+        }
+        else {
+            printf("sync\n\r");
         }
     }
     return 1;
@@ -137,8 +159,8 @@ uint8_t* find_simple(map_simple_ptr obj, const uint8_t* key) {
         entry_t entry = get_entry(obj, cur_index);
 
         /*check duplicate*/
-        if(*entry.info == ENTRY_DELETED) continue;
-        if(*entry.info == ENTRY_OCCUPIED)
+        if(entry.info->state == ENTRY_DELETED) continue;
+        if(entry.info->state == ENTRY_OCCUPIED)
             if(!memcmp(entry.key, key, obj->key_size)) return entry.value; 
     }
     return NULL;
@@ -153,13 +175,18 @@ uint8_t erase_simple(map_simple_ptr obj, const uint8_t* key) {
         /*get entry*/
         entry_t entry = get_entry(obj, cur_index);
         /*check duplicate*/
-        if(*entry.info == ENTRY_OCCUPIED) {
+        if(entry.info->state == ENTRY_OCCUPIED) {
             if(!memcmp(entry.key, key, obj->key_size)) {
-                *entry.info = ENTRY_DELETED;
+                entry.info->state = ENTRY_DELETED;
+                _Sync_decrement(&obj->count);
                 return 0;
             } 
         }
     }
 
     return 1;
+}
+
+uint32_t count_simple(map_simple_ptr obj) {
+    return obj->count;
 }
