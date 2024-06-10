@@ -30,33 +30,33 @@ $(OBJDIR):
 
 # Сборка исполняемого файла main
 $(MAIN_TARGET): $(OBJFILES) $(OBJDIR)/main.o
-	$(CC) $(CFLAGS) -o $(MAIN_TARGET) $(OBJFILES) $(OBJDIR)/main.o -lpthread -march=x86-64
+	$(CC) $(CFLAGS) -o $(MAIN_TARGET) $(OBJFILES) $(OBJDIR)/main.o -lpthread -march=x86-64 -m64
 
 # Сборка исполняемого файла 00_simple_map
 $(MAP_TARGET): $(OBJFILES) $(OBJDIR)/00_simple_map.o $(OBJDIR)/common.o
-	$(CC) $(CFLAGS) -o $(MAP_TARGET) $(OBJFILES) $(OBJDIR)/00_simple_map.o $(OBJDIR)/common.o -lcunit -lpthread -march=x86-64
+	$(CC) $(CFLAGS) -o $(MAP_TARGET) $(OBJFILES) $(OBJDIR)/00_simple_map.o $(OBJDIR)/common.o -lcunit -lpthread -march=x86-64 -m64
 
 # Сборка исполняемого файла для тестов
 TEST_TARGET = test_runner
 $(TEST_TARGET): $(OBJFILES) $(TESTOBJFILES) $(OBJDIR)/common.o
-	$(CC) $(CFLAGS) -o $(TEST_TARGET) $(OBJFILES) $(TESTOBJFILES) -lcunit -lpthread -march=x86-64
+	$(CC) $(CFLAGS) -o $(TEST_TARGET) $(OBJFILES) $(TESTOBJFILES) -lcunit -lpthread -march=x86-64 -m64
 
 # Компиляция исходных файлов в объектные файлы
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ -march=x86-64
 
 $(OBJDIR)/main.o: main.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ -march=x86-64
 
 $(OBJDIR)/00_simple_map.o: $(TESTDIR)/00_simple_map.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ -march=x86-64
 
 $(OBJDIR)/%.o: $(TESTDIR)/%.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ -march=x86-64
 
 # Компиляция common.c
 $(OBJDIR)/common.o: $(TESTDIR)/common.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ -march=x86-64
 
 # Цель для запуска приложения main
 run_main: $(MAIN_TARGET)

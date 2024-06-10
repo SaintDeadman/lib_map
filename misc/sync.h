@@ -11,11 +11,11 @@
         return atomic_compare_exchange_strong((_Atomic int *)ptr, &val_e, val_s);
     }
 
-    inline void _Sync_increment(_Sync uint32_t *value) {
+    inline void _Sync_increment(_Sync size_t *value) {
         atomic_fetch_add(value, 1);
     }
 
-    inline void _Sync_decrement(_Sync uint32_t *value) {
+    inline void _Sync_decrement(_Sync size_t *value) {
         atomic_fetch_sub(value, 1);
     }
 
@@ -26,11 +26,11 @@
         return __sync_bool_compare_and_swap((int *)ptr, val_e, val_s);
     }
 
-    inline  void _Sync_increment(_Sync uint32_t *value) {
+    inline  void _Sync_increment(_Sync size_t *value) {
         __sync_fetch_and_add(value, 1);
     }
 
-    inline void _Sync_decrement(_Sync uint32_t *value) {
+    inline void _Sync_decrement(_Sync size_t *value) {
         __sync_fetch_and_sub(value, 1);
     }
 

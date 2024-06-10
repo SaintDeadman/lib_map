@@ -1,6 +1,11 @@
-#include "map_simple.h"
-#include "../misc/sync.h"
 #include <stdlib.h>
+#include <stdio.h>
+#include <inttypes.h>
+#include <string.h>
+
+#include "map_simple.h"
+#include "../misc/allocator.h"
+#include "../misc/sync.h"
 
 
 #define ENTRY_FREE      0
@@ -20,21 +25,24 @@ typedef struct {
 } entry_t;
 
 typedef struct map_simple {
-    uint32_t mem_size;
-    uint32_t key_size;
-    uint32_t val_size;
+    size_t mem_size;
+    size_t key_size;
+    size_t val_size;
     void* mem;
     entry_info_t* sync_data;
-    _Sync uint32_t count;
+    _Sync size_t count;
+    _Sync size_t count_lock_error;
 } map_simple_t;
 
 
-
+#define MAP_SUCCESS (0)
+#define MAP_DUPLICATE (2)
+#define MAP_ERROR (1)
 
 /*===================================================
-            create
+                NEW/FREE SALE
 ======================================================*/
-map_simple_ptr new_simple_map(uint32_t map_size, uint32_t key_size, uint32_t val_size){
+map_simple_ptr new_simple_map(const size_t map_size, const size_t key_size, const size_t val_size) {
     /*create struct*/
     map_simple_ptr  map = (map_simple_ptr)malloc(sizeof(map_simple_t));
     if(!map) return NULL;
@@ -45,24 +53,28 @@ map_simple_ptr new_simple_map(uint32_t map_size, uint32_t key_size, uint32_t val
     map->key_size = key_size;
     map->val_size = val_size;
     map->count = 0;
-    map->mem = calloc(map_size, map->key_size + map->val_size);
-    if(!map->mem) {
+
+    /*allocate mem to nodes*/
+    size_t entry_size = map->key_size + map->val_size;
+    map->mem = allocate_memory(entry_size*map_size);
+    if(map->mem == 0) {
         free(map);
         return NULL;
     }
-    map->sync_data = calloc(map_size, sizeof(entry_info_t));
-    if(!map->sync_data) {
+
+    /*allocate mem to ctrl structs*/
+    map->sync_data = allocate_memory(map_size*sizeof(entry_info_t));
+    if(map->sync_data == 0) {
         free(map->mem);
         free(map);
         return NULL;
     }
-
     return map;
 }
 
 void free_simple_map(map_simple_ptr map) {
-    free(map->sync_data);
-    free(map->mem);
+    deallocate_memory(map->sync_data, map->mem_size*sizeof(entry_info_t));
+    deallocate_memory(map->mem, map->mem_size*(map->key_size + map->val_size));
     free(map);
 }
 
@@ -75,19 +87,20 @@ static entry_t get_entry(map_simple_ptr map, uint64_t index) {
     return ent;
 }
 
-static void save_entry(map_simple_ptr map, entry_t entry, uint8_t* key, uint8_t* value) {
+static void save_entry(map_simple_ptr map, entry_t entry, const uint8_t* key, const uint8_t* value) {
     memcpy(entry.key, key, map->key_size);
     memcpy(entry.value, value, map->val_size);
 }
 
 static void print_entry(map_simple_ptr map, uint64_t index) {
     entry_t entry = get_entry(map, index);
-    printf("[%d] key %#016x value %#016x\n", index, entry.key, entry.value);
+    printf("[%zu] key %p value %p", index, entry.key, entry.value);
 }
+
 static void print_key(map_simple_ptr map, uint64_t index) {
-    int i;
+    size_t i;
     entry_t entry = get_entry(map, index);
-    printf("[%d] key = ", index);
+    printf("[%zu] key = ", index);
     for(i=0;i<map->key_size;i++)
         printf("%02X", entry.key[i]);
     printf("\n");
@@ -96,8 +109,9 @@ static void print_key(map_simple_ptr map, uint64_t index) {
 /*===================================================
                     HASH FUNCTION
 ===================================================*/
-static uint32_t hash_func(const uint8_t* key, size_t key_size) {
-    return (uint32_t)(*((uint32_t*)key));
+static uint64_t hash_func(const uint8_t* key, size_t key_size) {
+    (void)(key_size);
+    return (uint64_t)(*((uint64_t*)key));
 }
 
 
@@ -105,47 +119,42 @@ static uint32_t hash_func(const uint8_t* key, size_t key_size) {
                     API
 ======================================================*/
 uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* value) {
-    uint32_t hash = hash_func(key, obj->key_size);
-    uint32_t cur_index =  (uint32_t)hash % (uint32_t)obj->mem_size;
     uint64_t i;
-    for(i = 0; i < obj->mem_size; i++)
-    { 
-        /*get index*/
-        cur_index = (cur_index+1) % obj->mem_size;
-
+    /*here we can using map of hashes*/
+    uint64_t hash = hash_func(key, obj->key_size);
+    uint64_t cur_index =  hash % obj->mem_size;
+    for(i = 0; i < obj->mem_size; i++, cur_index = (cur_index+1) % obj->mem_size) { 
         /*get entry*/
         entry_t entry = get_entry(obj, cur_index);
         
-        if( _Sync_check_and_set(&entry.info->used, 0,1)) {
-            /*check duplicate*/
-            /*need filter of Blum*/
-            if(entry.info->state == ENTRY_OCCUPIED) {
-                if(!memcmp(entry.key, key, obj->key_size)) {
-                    entry.info->used = 0;
-                    return 2;
-                }
-                entry.info->used = 0;
-                continue; 
-            }
-
-            /*try to write*/
-            if( entry.info->state == ENTRY_FREE || entry.info->state == ENTRY_DELETED ) {
-                save_entry(obj, entry, key, value);
-                _Sync_increment(&obj->count);  
-                entry.info->state = ENTRY_OCCUPIED;
-                entry.info->used = 0;
-                
-                //print_entry(obj, cur_index);
-                //print_key(obj, cur_index);
-
-                return 0;
-            }
+        /*lock entry*/
+        if( !_Sync_check_and_set(&entry.info->used, 0, 1)) {
+            _Sync_increment(&obj->count_lock_error);
+            continue;
         }
-        else {
-            printf("sync\n\r");
+
+        /*check duplicate (we can use here filter of Bloom)*/
+        if(entry.info->state == ENTRY_OCCUPIED) {
+            if(!memcmp(entry.key, key, obj->key_size)) {
+                entry.info->used = 0;
+                return MAP_DUPLICATE;
+            }
+            entry.info->used = 0;
+            continue; 
         }
+
+        /*try to write*/
+        if( entry.info->state == ENTRY_FREE || entry.info->state == ENTRY_DELETED ) {
+            save_entry(obj, entry, key, value);
+            _Sync_increment(&obj->count);  
+            entry.info->state = ENTRY_OCCUPIED;
+            entry.info->used = 0;
+
+            return MAP_SUCCESS;
+        }
+
     }
-    return 1;
+    return MAP_ERROR;
 }
 
 uint8_t* find_simple(map_simple_ptr obj, const uint8_t* key) {
@@ -153,8 +162,7 @@ uint8_t* find_simple(map_simple_ptr obj, const uint8_t* key) {
     uint64_t cur_index =  hash % obj->mem_size;
     uint64_t i;
     
-    for(i = 0; i < obj->mem_size; i++, cur_index = (cur_index+1) % obj->mem_size)
-    {
+    for(i = 0; i < obj->mem_size; i++, cur_index = (cur_index+1) % obj->mem_size) {
         /*get entry*/
         entry_t entry = get_entry(obj, cur_index);
 
@@ -179,14 +187,14 @@ uint8_t erase_simple(map_simple_ptr obj, const uint8_t* key) {
             if(!memcmp(entry.key, key, obj->key_size)) {
                 entry.info->state = ENTRY_DELETED;
                 _Sync_decrement(&obj->count);
-                return 0;
+                return MAP_SUCCESS;
             } 
         }
     }
 
-    return 1;
+    return MAP_ERROR;
 }
 
-uint32_t count_simple(map_simple_ptr obj) {
+size_t count_simple(map_simple_ptr obj) {
     return obj->count;
 }

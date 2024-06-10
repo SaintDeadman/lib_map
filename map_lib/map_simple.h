@@ -6,7 +6,7 @@
 
 typedef struct map_simple* map_simple_ptr;
 
-map_simple_ptr new_simple_map(uint32_t map_size, uint32_t key_size, uint32_t val_size);
+map_simple_ptr new_simple_map(const size_t map_size, const size_t key_size, const size_t val_size);
 void free_simple_map(map_simple_ptr);
 
 uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* value);

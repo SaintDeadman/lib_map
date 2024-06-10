@@ -2,6 +2,7 @@
 #define _HASH_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 typedef enum{
     hash_simple = 0,
@@ -11,19 +12,22 @@ typedef enum{
 typedef struct {
     hash_type_e type;
     void* obj;
-} hash_t;
+} map_t;
 
+#define MAP_SUCCESS (0)
+#define MAP_DUPLICATE (2)
+#define MAP_ERROR (-1)
 
-void hash_create(hash_t* obj, hash_type_e type);
-
-uint8_t insertm(hash_t* map, const uint8_t* key, const uint8_t* value);
-uint8_t* findm(hash_t* map, const uint8_t* key);
-uint8_t erase_m(hash_t* obj, uint8_t* key);
+map_t* new_map(const hash_type_e type, const size_t size, const size_t key_size, const size_t val_size);
+void free_map(map_t* map);
+uint8_t insertm(const map_t* map, const uint8_t* key, const uint8_t* value);
+uint8_t* findm(const map_t* map, const uint8_t* key);
+uint8_t erasem(const map_t* map, const uint8_t* key);
 
 /* TODO */
-uint8_t* beginm(hash_t* map);
-uint8_t* endm(hash_t* map);
-uint8_t* nextm(hash_t* map);
+uint8_t* beginm(map_t* map);
+uint8_t* endm(map_t* map);
+uint8_t* nextm(map_t* map);
 
 
 #endif //_HASH_H_
