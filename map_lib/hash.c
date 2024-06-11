@@ -33,7 +33,10 @@ uint8_t (*erase_fn[])(const void* obj, const uint8_t* key) = {
     [hash_simple] = (uint8_t (*)(void *, const uint8_t* key))erase_simple
 };
 
-
+size_t (*count_fn[])(const void* obj) = {
+    [hash_simple...hash_dummy] = count_mock,
+    [hash_simple] = (size_t (*)(void *))count_simple
+};
 
 /*
     it just callers
@@ -77,4 +80,9 @@ uint8_t erasem(const map_t* map, const uint8_t* key) {
     if(!map) return MAP_ERROR;
     if(!map->obj) return MAP_ERROR;
     return erase_fn[map->type](map->obj, key);
+}
+
+size_t countm(const map_t* map) {
+    if(!map) return 0;
+    return count_fn[map->type](map->obj);
 }

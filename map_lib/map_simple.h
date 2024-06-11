@@ -12,6 +12,6 @@ void free_simple_map(map_simple_ptr);
 uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* value);
 uint8_t* find_simple(map_simple_ptr obj, const uint8_t* key);
 uint8_t erase_simple(map_simple_ptr obj, const uint8_t* key);
-uint32_t count_simple(map_simple_ptr obj);
+size_t count_simple(map_simple_ptr obj);
 
 #endif //_MAP_SIMPLE_H_

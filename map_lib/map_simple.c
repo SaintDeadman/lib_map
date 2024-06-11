@@ -4,8 +4,8 @@
 #include <string.h>
 
 #include "map_simple.h"
-#include "../misc/allocator.h"
-#include "../misc/sync.h"
+#include "misc/allocator.h"
+#include "misc/sync.h"
 
 
 #define ENTRY_FREE      0

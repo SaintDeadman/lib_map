@@ -1,5 +1,5 @@
 #include "../map_lib/hash.h"
-#include "../map_lib/map_simple.h"
+// #include "../map_lib/map_simple.h"
 
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
@@ -32,18 +32,18 @@ static void generate_rand_entry(test_entry_t* entry) {
 }
 
 void test_create_table(void) {
-    map_simple_ptr test_simple_map = new_simple_map(MAP_SIZE, KEY_SIZE, VAL_SIZE);
-    if(!test_simple_map) {
+    map_t* test_map = new_map(hash_simple, MAP_SIZE, KEY_SIZE, VAL_SIZE);
+    if(!test_map) {
         CU_FAIL("allocation error")
         return;
     }
-    free_simple_map(test_simple_map);
+    free_map(test_map);
 }
 
 void test_insert_node(void) {
     /*create map*/
-    map_simple_ptr test_simple_map = new_simple_map(MAP_SIZE, KEY_SIZE, VAL_SIZE);
-    if(!test_simple_map) {
+    map_t* test_map = new_map(hash_simple, MAP_SIZE, KEY_SIZE, VAL_SIZE);
+    if(!test_map) {
         CU_FAIL("allocation error")
         return;
     }
@@ -51,51 +51,51 @@ void test_insert_node(void) {
     /*insert */
     test_entry_t entry;
     generate_rand_entry(&entry);
-    CU_ASSERT_EQUAL(insert_simple(test_simple_map, entry.key, entry.val), 0);
+    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
     
     /*check count */
-    CU_ASSERT_EQUAL(count_simple(test_simple_map), 1);
+    CU_ASSERT_EQUAL(countm(test_map), 1);
     
     /*free*/
-    free_simple_map(test_simple_map);
+    free_map(test_map);
 }
 
 void test_find_node(void) {
     /*create map*/
-    map_simple_ptr test_simple_map = new_simple_map(MAP_SIZE, KEY_SIZE, VAL_SIZE);
-    CU_ASSERT_PTR_NOT_NULL(test_simple_map);
+    map_t* test_map = new_map(hash_simple, MAP_SIZE, KEY_SIZE, VAL_SIZE);
+    CU_ASSERT_PTR_NOT_NULL(test_map);
     /*insert */
     test_entry_t entry;
     generate_rand_entry(&entry);
-    CU_ASSERT_EQUAL(insert_simple(test_simple_map, entry.key, entry.val), 0);
+    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
     /* find */
-    uint8_t* value = find_simple(test_simple_map,entry.key);
+    uint8_t* value = findm(test_map,entry.key);
     CU_ASSERT_PTR_NOT_NULL(value);
     CU_ASSERT_EQUAL(memcmp(value, entry.val, VAL_SIZE), 0);
     /*free*/
-    free_simple_map(test_simple_map);
+    free_map(test_map);
 }
 
 void test_delete_node(void) {
     /*create map*/
-    map_simple_ptr test_simple_map = new_simple_map(MAP_SIZE, KEY_SIZE, VAL_SIZE);
-    CU_ASSERT_PTR_NOT_NULL(test_simple_map);
+    map_t* test_map = new_map(hash_simple, MAP_SIZE, KEY_SIZE, VAL_SIZE);
+    CU_ASSERT_PTR_NOT_NULL(test_map);
     /*insert */
     test_entry_t entry;
     generate_rand_entry(&entry);
-    CU_ASSERT_EQUAL(insert_simple(test_simple_map, entry.key, entry.val), 0);
+    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
     /*delete*/
-    CU_ASSERT_EQUAL(erase_simple(test_simple_map, entry.key), 0);
-    CU_ASSERT_EQUAL(count_simple(test_simple_map), 0);
+    CU_ASSERT_EQUAL(erasem(test_map, entry.key), 0);
+    CU_ASSERT_EQUAL(countm(test_map), 0);
     /*free*/
-    free_simple_map(test_simple_map);
+    free_map(test_map);
 }
 
 void test_fill_table(void) {
     uint32_t map_size = (uint32_t)1e6;
     /*create map*/
-    map_simple_ptr test_simple_map = new_simple_map(map_size, KEY_SIZE, VAL_SIZE);
-    if(!test_simple_map) {
+    map_t* test_map = new_map(hash_simple, MAP_SIZE, KEY_SIZE, VAL_SIZE);
+    if(!test_map) {
         CU_FAIL("allocation error")
         return;
     }
@@ -104,26 +104,22 @@ void test_fill_table(void) {
     test_entry_t entry;
     for(i =0; i < map_size; i++){
         generate_rand_entry(&entry);
-        CU_ASSERT_EQUAL(insert_simple(test_simple_map, entry.key, entry.val), 0);
+        CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
     }
     /*check count*/
-    CU_ASSERT_EQUAL(count_simple(test_simple_map), map_size);
+    CU_ASSERT_EQUAL(countm(test_map), map_size);
     /*free*/
-    free_simple_map(test_simple_map);
+    free_map(test_map);
 }
-
-
-
-
 
 void *thread_func(void *arg) {
     thread_data_t* thread_data = (thread_data_t*)arg;
     test_entry_t entry;
     for (size_t i = 0; i < (size_t)1e6; ++i) {
         generate_rand_entry(&entry);
-        uint8_t status = insert_simple(thread_data->table, entry.key, entry.val);
+        uint8_t status = insertm(thread_data->table, entry.key, entry.val);
         if(status == 0) {
-            status = erase_simple(thread_data->table, entry.key);
+            status = erasem(thread_data->table, entry.key);
             CU_ASSERT_EQUAL(status, 0);
             if(status){
                 CU_FAIL("can't erase entry");
@@ -140,11 +136,9 @@ void *thread_func(void *arg) {
     pthread_exit(NULL);
 }
 void test_multitreads(void) {
-    
-
     /*create map*/
-    map_simple_ptr test_simple_map = new_simple_map(MAP_SIZE, KEY_SIZE, VAL_SIZE);
-    if(!test_simple_map) {
+    map_t* test_map = new_map(hash_simple, MAP_SIZE, KEY_SIZE, VAL_SIZE);
+    if(!test_map) {
         CU_FAIL("allocation error")
         return;
     }
@@ -152,9 +146,9 @@ void test_multitreads(void) {
     /*pre-fill*/
     uint32_t i = 0;
     test_entry_t entry;
-    for(i =0; i < MAP_SIZE*0.75; i++){
+    for(i =0; i < MAP_SIZE*0.75; i++) {
         generate_rand_entry(&entry);
-        CU_ASSERT_EQUAL(insert_simple(test_simple_map, entry.key, entry.val), 0);
+        CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
     }
     
     /*create threads*/
@@ -162,14 +156,14 @@ void test_multitreads(void) {
     thread_data_t thread_data[NUM_THREADS];
     for (int i = 0; i < NUM_THREADS; ++i) {
         thread_data[i].thread_id = i;
-        thread_data[i].table = test_simple_map;
+        thread_data[i].table = test_map;
         pthread_create(&threads[i], NULL, thread_func, (void *)&thread_data[i]);
     }
     for (int i = 0; i < NUM_THREADS; ++i)
         pthread_join(threads[i], NULL);
 
     /*free*/
-    free_simple_map(test_simple_map);
+    free_map(test_map);
 }
 
 

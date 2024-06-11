@@ -23,6 +23,7 @@ void free_map(map_t* map);
 uint8_t insertm(const map_t* map, const uint8_t* key, const uint8_t* value);
 uint8_t* findm(const map_t* map, const uint8_t* key);
 uint8_t erasem(const map_t* map, const uint8_t* key);
+size_t countm(const map_t* map);
 
 /* TODO */
 uint8_t* beginm(map_t* map);
