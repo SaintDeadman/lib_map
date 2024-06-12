@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 project(map)
 
-file(GLOB SOURCES "*.c")
+file(GLOB SOURCES 
+    "*.c"
+    "misc/*.c"
+    )
 file(GLOB HEADERS "hash.h")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})

@@ -5,10 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #include "common.h"
 
-const hash_type_e map_name =  hash_simple;
+extern const hash_type_e map_name =  hash_double;
+
 
 int main() {
     if (CUE_SUCCESS != CU_initialize_registry()) {

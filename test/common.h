@@ -3,6 +3,11 @@
 
 #include <stdlib.h>
 
-void generate_random_bytes(unsigned char *buffer, size_t length);
+void test_create_table(void);
+void test_insert_node(void);
+void test_find_node(void);
+void test_delete_node(void);
+void test_fill_table(void);
+void test_multitreads(void);
 
 #endif // _COMMON_H_

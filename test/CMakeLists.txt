@@ -1,12 +1,22 @@
 cmake_minimum_required(VERSION 3.10)
 project(tests)
 
-file(GLOB TEST_SOURCES "*.c")
 
 include_directories(${CMAKE_SOURCE_DIR}/map_lib)
 
 
-add_executable(run_tests ${TEST_SOURCES})
+file(GLOB TEST00_SOURCES 
+    "00_simple_map.c"
+    "common.c"
+    )
+add_executable(run_test_00 ${TEST00_SOURCES})
+
+file(GLOB TEST01_SOURCES 
+    "01_double_map.c" 
+    "common.c"
+    )
+add_executable(run_test_01 ${TEST01_SOURCES})
+
 
 find_path(CUNIT_INCLUDE_DIR
     NAMES CUnit/CUnit.h
@@ -15,7 +25,7 @@ find_path(CUNIT_INCLUDE_DIR
 
 find_library(CUNIT_LIBRARY
     NAMES cunit
-    # PATHS /usr/lib /usr/local/lib
+    PATHS /usr/lib /usr/local/lib
 )
 
 include(FindPackageHandleStandardArgs)
@@ -31,8 +41,11 @@ endif()
 
 include_directories(${CUNIT_INCLUDE_DIR})
 
-target_link_libraries(run_tests ${CUNIT_LIBRARIES} map_static pthread)
+target_link_libraries(run_test_00 ${CUNIT_LIBRARIES} map_static pthread)
+set_target_properties(run_test_00 PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 
-set_target_properties(run_tests PROPERTIES
+target_link_libraries(run_test_01 ${CUNIT_LIBRARIES} map_static pthread)
+set_target_properties(run_test_01 PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
