@@ -17,7 +17,7 @@ typedef struct {
 
 #define MAP_SUCCESS (0)
 #define MAP_DUPLICATE (2)
-#define MAP_ERROR (-1)
+#define MAP_ERROR (1)
 
 map_t* new_map(const hash_type_e type, const size_t size, const size_t key_size, const size_t val_size);
 void free_map(map_t* map);

@@ -1,9 +1,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include "hash.h"
 #include "map_double.h"
 #include "misc/allocator.h"
 #include "misc/sync.h"
+#include "misc/hashes.h"
 
 typedef struct {
     uint32_t state;
@@ -26,10 +28,6 @@ typedef struct map_double {
     _Sync size_t count;
     _Sync size_t count_lock_error;
 } map_double_t;
-
-#define MAP_SUCCESS (0)
-#define MAP_DUPLICATE (2)
-#define MAP_ERROR (1)
 
 #define ENTRY_FREE      0
 #define ENTRY_OCCUPIED  1
@@ -72,7 +70,7 @@ void free_double_map(map_double_ptr map) {
 }
 
 /*=============================================================*/
-static entry_t get_entry(map_double_ptr map, uint64_t index) {
+static inline entry_t get_entry(map_double_ptr map, uint64_t index) {
     uint64_t ent_size = sizeof(uint64_t) + map->key_size+map->val_size;
     entry_t ent = {
                 .info = &map->sync_data[index],
@@ -82,13 +80,13 @@ static entry_t get_entry(map_double_ptr map, uint64_t index) {
     return ent;
 }
 
-static void update_entry(map_double_ptr map, entry_t entry, const entry_t* new_entry) {
+static inline void update_entry(map_double_ptr map, entry_t entry, const entry_t* new_entry) {
     memcpy(entry.hash, new_entry->hash,sizeof(uint64_t));
     memcpy(entry.key, new_entry->key, map->key_size);
     memcpy(entry.value, new_entry->value, map->val_size);
 }
 
-static bool is_duplicate(map_double_ptr map, entry_t* first, const entry_t* second) {
+static inline bool is_duplicate(map_double_ptr map, entry_t* first, const entry_t* second) {
     /*check hashes*/
     if(*((uint64_t*)first->hash) != *((uint64_t*)second->hash)) return false;
     /*check keys*/
@@ -96,48 +94,7 @@ static bool is_duplicate(map_double_ptr map, entry_t* first, const entry_t* seco
     return true;
 }
 
-static void print_entry(map_double_ptr map, uint64_t index) {
-    entry_t entry = get_entry(map, index);
-    printf("[%zu] key %p value %p\n", index, entry.key, entry.value);
-}
-
-static void print_key(map_double_ptr map, uint64_t index) {
-    size_t i;
-    entry_t entry = get_entry(map, index);
-    printf("[%zu] key = ", index);
-    for(i=0;i<map->key_size;i++)
-        printf("%02X", entry.key[i]);
-    printf("\n");
-}
-
-
-/*===================================================
-                    HASH FUNCTION
-===================================================*/
-static uint64_t hash_func(const uint8_t* key, size_t key_size) {
-    (void)(key_size);
-    return (uint64_t)(*((uint64_t*)key));
-}
-
-static uint64_t fnv1a_64(const void *data, size_t len) {
-    
-    const uint8_t *bytes = (const uint8_t *)data;
-    const uint64_t FNV_prime = 1099511628211ULL;
-    uint64_t hash = 14695981039346656037ULL;
-
-    for (size_t i = 0; i < len; ++i) {
-        hash ^= bytes[i];
-        hash *= FNV_prime;
-    }
-
-    return hash;
-}
-
-//=================================================================================
-//                              API
-//=================================================================================
-
-uint8_t insert_entry(map_double_ptr obj, uint64_t index, entry_t* ins_entry) {
+static inline uint8_t insert_entry(map_double_ptr obj, uint64_t index, entry_t* ins_entry) {
     
     /*get entry*/
     entry_t entry = get_entry(obj, index);
@@ -164,6 +121,23 @@ uint8_t insert_entry(map_double_ptr obj, uint64_t index, entry_t* ins_entry) {
     return MAP_SUCCESS;
 }
 
+static void print_entry(map_double_ptr map, uint64_t index) {
+    entry_t entry = get_entry(map, index);
+    printf("[%zu] key %p value %p\n", index, entry.key, entry.value);
+}
+
+static void print_key(map_double_ptr map, uint64_t index) {
+    size_t i;
+    entry_t entry = get_entry(map, index);
+    printf("[%zu] key = ", index);
+    for(i=0;i<map->key_size;i++)
+        printf("%02X", entry.key[i]);
+    printf("\n");
+}
+
+//=================================================================================
+//                              API
+//=================================================================================
 
 uint8_t insert_double(map_double_ptr obj, const uint8_t* key, const uint8_t* value) {
     uint64_t hash;
@@ -171,27 +145,24 @@ uint8_t insert_double(map_double_ptr obj, const uint8_t* key, const uint8_t* val
     uint8_t status;
     entry_t ins_entry = {.hash = &hash, .key = key, .value = value};
 
-    /* 1st probe */
+    /*---------------1st probe-----------------*/
     hash = fnv1a_64(key, obj->key_size);
     cur_index = hash % obj->mem_size;
     status = insert_entry(obj, cur_index, &ins_entry);
-    if(status == MAP_SUCCESS) return MAP_SUCCESS;
-    if(status == MAP_DUPLICATE) return MAP_DUPLICATE;
+    if(status != MAP_ERROR) return status;
 
-    /* 2nd probe */
+    /*---------------2nd probe-----------------*/
     hash = hash_func(key, obj->key_size);
     cur_index = hash % obj->mem_size;
     status = insert_entry(obj, cur_index, &ins_entry);
-    if(status == MAP_SUCCESS) return MAP_SUCCESS;
-    if(status == MAP_DUPLICATE) return MAP_DUPLICATE;
-    
-    /*others*/
+    if(status != MAP_ERROR) return status;
+
+    /*---------------others-----------------*/
     uint64_t i = 0;
     for(i = 0; i < obj->mem_size; i++) {
         cur_index = (cur_index+1) % obj->mem_size;
         status = insert_entry(obj, cur_index, &ins_entry);
-        if(status == MAP_SUCCESS) return MAP_SUCCESS;
-        if(status == MAP_DUPLICATE) return MAP_DUPLICATE;
+        if(status != MAP_ERROR) return status;
     }
 
     return MAP_ERROR;
@@ -203,17 +174,16 @@ uint8_t* find_double(map_double_ptr obj, const uint8_t* key) {
     entry_t entry;
     entry_t sel_entry = {.hash = &hash, .key = key};
 
-    /* 1st probe */
+    /*---------------1st probe-----------------*/
     hash = fnv1a_64(key, obj->key_size);
     cur_index = hash % obj->mem_size;
     entry = get_entry(obj, cur_index);
-
     /*check entry*/
     if(entry.info->state == ENTRY_OCCUPIED) {
         if(is_duplicate(obj,&entry, &sel_entry)) return entry.value; 
     }
 
-    /* 2nd probe */
+    /*---------------2nd probe-----------------*/
     hash = hash_func(key, obj->key_size);
     cur_index = hash % obj->mem_size;
     entry = get_entry(obj, cur_index);
@@ -222,7 +192,7 @@ uint8_t* find_double(map_double_ptr obj, const uint8_t* key) {
         if(is_duplicate(obj,&entry, &sel_entry)) return entry.value;
     }
 
-    /*others*/
+    /*---------------others-----------------*/
     uint64_t i = 0;
     for(i = 0; i < obj->mem_size; i++) {
         cur_index = (cur_index+1) % obj->mem_size;
@@ -242,7 +212,7 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
     entry_t entry;
     entry_t sel_entry = {.hash = &hash, .key = key};
 
-    /* 1st probe */
+    /*---------------1st probe-----------------*/
     hash = fnv1a_64(key, obj->key_size);
     cur_index = hash % obj->mem_size;
     entry = get_entry(obj, cur_index);
@@ -255,7 +225,7 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
          }
     }
 
-    /* 2nd probe */
+   /*---------------2nd probe-----------------*/
     hash = hash_func(key, obj->key_size);
     cur_index = hash % obj->mem_size;
     entry = get_entry(obj, cur_index);
@@ -268,7 +238,7 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
          }
     }
 
-    /*others*/
+    /*---------------others-----------------*/
     uint64_t i = 0;
     for(i = 0; i < obj->mem_size; i++) {
         cur_index = (cur_index+1) % obj->mem_size;

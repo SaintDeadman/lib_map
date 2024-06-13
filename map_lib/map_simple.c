@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
-
+#include "hash.h"
 #include "map_simple.h"
 #include "misc/allocator.h"
 #include "misc/sync.h"
-
+#include "misc/hashes.h"
 
 #define ENTRY_FREE      0
 #define ENTRY_OCCUPIED  1
@@ -33,11 +33,6 @@ typedef struct map_simple {
     _Sync size_t count;
     _Sync size_t count_lock_error;
 } map_simple_t;
-
-
-#define MAP_SUCCESS (0)
-#define MAP_DUPLICATE (2)
-#define MAP_ERROR (1)
 
 /*===================================================
                 NEW/FREE SALE
@@ -104,14 +99,6 @@ static void print_key(map_simple_ptr map, uint64_t index) {
     for(i=0;i<map->key_size;i++)
         printf("%02X", entry.key[i]);
     printf("\n");
-}
-
-/*===================================================
-                    HASH FUNCTION
-===================================================*/
-static uint64_t hash_func(const uint8_t* key, size_t key_size) {
-    (void)(key_size);
-    return (uint64_t)(*((uint64_t*)key));
 }
 
 
