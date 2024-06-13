@@ -11,6 +11,7 @@
 #define KEY_SIZE (64)
 #define VAL_SIZE (128)
 #define NUM_THREADS 32
+#define NUM_INS_PER_THREAD (1e2)
 
 extern hash_type_e map_name;
 
@@ -57,7 +58,8 @@ void test_insert_node(void) {
     test_entry_t entry;
     generate_rand_entry(0, &entry);
     CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
-    
+    /*check unique*/
+    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 2);
     /*check count */
     CU_ASSERT_EQUAL(countm(test_map), 1);
     
@@ -97,7 +99,6 @@ void test_delete_node(void) {
 }
 
 void test_fill_table(void) {
-    uint32_t map_size = (uint32_t)1e6;
     /*create map*/
     map_t* test_map = new_map(map_name, MAP_SIZE, KEY_SIZE, VAL_SIZE);
     if(!test_map) {
@@ -107,12 +108,12 @@ void test_fill_table(void) {
     /*fill*/
     uint32_t i = 0;
     test_entry_t entry;
-    for(i =0; i < map_size; i++){
+    for(i =0; i < MAP_SIZE; i++){
         generate_rand_entry(0, &entry);
         CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
     }
     /*check count*/
-    CU_ASSERT_EQUAL(countm(test_map), map_size);
+    CU_ASSERT_EQUAL(countm(test_map), MAP_SIZE);
     /*free*/
     free_map(test_map);
 }
@@ -120,7 +121,7 @@ void test_fill_table(void) {
 void *thread_func(void *arg) {
     thread_data_t* thread_data = (thread_data_t*)arg;
     test_entry_t entry;
-    for (size_t i = 0; i < (size_t)1e3; ++i) {
+    for (size_t i = 0; i < (size_t)NUM_INS_PER_THREAD; ++i) {
         generate_rand_entry(thread_data->thread_id, &entry);
         uint8_t status = insertm(thread_data->table, entry.key, entry.val);
         if(status == 0) {

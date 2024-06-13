@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include "map_double.h"
 #include "misc/allocator.h"
 #include "misc/sync.h"
@@ -11,6 +12,7 @@ typedef struct {
 
 typedef struct {
     entry_info_t* info;
+    uint8_t* hash;
     uint8_t* key;
     uint8_t* value;
 } entry_t;
@@ -46,7 +48,7 @@ map_double_ptr new_double_map(const size_t map_size, const size_t key_size, cons
     map->count = 0;
 
     /*allocate mem to nodes*/
-    size_t entry_size = map->key_size + map->val_size;
+    size_t entry_size = sizeof(uint64_t) + map->key_size + map->val_size;
     map->mem = allocate_memory(entry_size*map_size);
     if(map->mem == 0) {
         free(map);
@@ -65,22 +67,33 @@ map_double_ptr new_double_map(const size_t map_size, const size_t key_size, cons
 
 void free_double_map(map_double_ptr map) {
     deallocate_memory(map->sync_data, map->mem_size*sizeof(entry_info_t));
-    deallocate_memory(map->mem, map->mem_size*(map->key_size + map->val_size));
+    deallocate_memory(map->mem, map->mem_size*(sizeof(uint64_t) + map->key_size + map->val_size));
     free(map);
 }
 
 /*=============================================================*/
 static entry_t get_entry(map_double_ptr map, uint64_t index) {
-    uint64_t ent_size = map->key_size+map->val_size;
-    entry_t ent = {.info = &map->sync_data[index],
-                 .key = (uint8_t*)(map->mem + index*ent_size),
-                 .value = (uint8_t*)(map->mem + index*ent_size + map->key_size) };
+    uint64_t ent_size = sizeof(uint64_t) + map->key_size+map->val_size;
+    entry_t ent = {
+                .info = &map->sync_data[index],
+                .hash = (uint8_t*)(map->mem + index*ent_size), 
+                .key = (uint8_t*)(map->mem + index*ent_size + sizeof(uint64_t)),
+                .value = (uint8_t*)(map->mem + index*ent_size + map->key_size + sizeof(uint64_t) ) };
     return ent;
 }
 
-static void save_entry(map_double_ptr map, entry_t entry, const uint8_t* key, const uint8_t* value) {
-    memcpy(entry.key, key, map->key_size);
-    memcpy(entry.value, value, map->val_size);
+static void update_entry(map_double_ptr map, entry_t entry, const entry_t* new_entry) {
+    memcpy(entry.hash, new_entry->hash,sizeof(uint64_t));
+    memcpy(entry.key, new_entry->key, map->key_size);
+    memcpy(entry.value, new_entry->value, map->val_size);
+}
+
+static bool is_duplicate(map_double_ptr map, entry_t* first, const entry_t* second) {
+    /*check hashes*/
+    if(*((uint64_t*)first->hash) != *((uint64_t*)second->hash)) return false;
+    /*check keys*/
+    if(memcmp(first->key,second->key, map->key_size))return false;
+    return true;
 }
 
 static void print_entry(map_double_ptr map, uint64_t index) {
@@ -124,29 +137,26 @@ static uint64_t fnv1a_64(const void *data, size_t len) {
 //                              API
 //=================================================================================
 
-uint8_t try_update_entry(map_double_ptr obj, uint64_t index, void* key, void* val) {
+uint8_t insert_entry(map_double_ptr obj, uint64_t index, entry_t* ins_entry) {
     
     /*get entry*/
     entry_t entry = get_entry(obj, index);
-    
+
+    /*check entry*/
+    if(entry.info->state == ENTRY_OCCUPIED) {
+        if(is_duplicate(obj,&entry, ins_entry)) return MAP_DUPLICATE;
+        return MAP_ERROR; 
+    }
+
     /*lock entry*/
     if( !_Sync_check_and_set(&entry.info->used, 0, 1)) {
         _Sync_increment(&obj->count_lock_error);
         return MAP_ERROR;
     }
-
-    /*check entry*/
-    if(entry.info->state == ENTRY_OCCUPIED) {
-        /*check dup*/
-        if(!memcmp(entry.key, key, obj->key_size)) {
-            entry.info->used = 0;
-            return MAP_DUPLICATE;
-        }
-        entry.info->used = 0;
-        return MAP_ERROR; 
-    }
-
-    save_entry(obj, entry, key, val);
+    
+    /*update entry*/
+    update_entry(obj, entry, ins_entry);
+    
     /*unlock*/
     _Sync_increment(&obj->count);  
     entry.info->state = ENTRY_OCCUPIED;
@@ -156,27 +166,30 @@ uint8_t try_update_entry(map_double_ptr obj, uint64_t index, void* key, void* va
 
 
 uint8_t insert_double(map_double_ptr obj, const uint8_t* key, const uint8_t* value) {
+    uint64_t hash;
+    uint64_t cur_index;
+    uint8_t status;
+    entry_t ins_entry = {.hash = &hash, .key = key, .value = value};
 
     /* 1st probe */
-    uint64_t hash = fnv1a_64(key, obj->key_size);
-    uint64_t cur_index = hash % obj->mem_size;
-    uint8_t status = try_update_entry(obj, cur_index, key, value);
+    hash = fnv1a_64(key, obj->key_size);
+    cur_index = hash % obj->mem_size;
+    status = insert_entry(obj, cur_index, &ins_entry);
     if(status == MAP_SUCCESS) return MAP_SUCCESS;
     if(status == MAP_DUPLICATE) return MAP_DUPLICATE;
 
     /* 2nd probe */
-    // uint64_t hash2 = hash_func(key, obj->key_size);
-    // uint64_t page_size_in_entry = (get_page_size()/(/*entry size*/obj->key_size+obj->val_size));
-    // uint64_t index_offset = hash % page_size_in_entry;
-    // uint64_t page_address = cur_index & ~((page_size_in_entry-1));
-    // cur_index = page_address + index_offset;
-    // if(try_update_entry(obj, cur_index, key, value) == MAP_SUCCESS) return MAP_SUCCESS;
-
+    hash = hash_func(key, obj->key_size);
+    cur_index = hash % obj->mem_size;
+    status = insert_entry(obj, cur_index, &ins_entry);
+    if(status == MAP_SUCCESS) return MAP_SUCCESS;
+    if(status == MAP_DUPLICATE) return MAP_DUPLICATE;
+    
     /*others*/
     uint64_t i = 0;
     for(i = 0; i < obj->mem_size; i++) {
         cur_index = (cur_index+1) % obj->mem_size;
-        status = try_update_entry(obj, cur_index, key, value);
+        status = insert_entry(obj, cur_index, &ins_entry);
         if(status == MAP_SUCCESS) return MAP_SUCCESS;
         if(status == MAP_DUPLICATE) return MAP_DUPLICATE;
     }
@@ -185,33 +198,29 @@ uint8_t insert_double(map_double_ptr obj, const uint8_t* key, const uint8_t* val
 }
 
 uint8_t* find_double(map_double_ptr obj, const uint8_t* key) {
+    uint64_t hash;
+    uint64_t cur_index;
+    entry_t entry;
+    entry_t sel_entry = {.hash = &hash, .key = key};
 
     /* 1st probe */
-    uint64_t hash = fnv1a_64(key, obj->key_size);
-    uint64_t cur_index = hash % obj->mem_size;
-    entry_t entry = get_entry(obj, cur_index);
+    hash = fnv1a_64(key, obj->key_size);
+    cur_index = hash % obj->mem_size;
+    entry = get_entry(obj, cur_index);
 
     /*check entry*/
     if(entry.info->state == ENTRY_OCCUPIED) {
-        /*check dup*/
-        if(!memcmp(entry.key, key, obj->key_size)) {
-            return entry.value;
-        } 
+        if(is_duplicate(obj,&entry, &sel_entry)) return entry.value; 
     }
 
     /* 2nd probe */
-    // uint64_t hash2 = hash_func(key, obj->key_size);
-    // uint64_t page_size_in_entry = (get_page_size()/(/*entry size*/obj->key_size+obj->val_size));
-    // uint64_t index_offset = hash % page_size_in_entry;
-    // uint64_t page_address = cur_index & ~((page_size_in_entry-1));
-    // cur_index = page_address + index_offset;
-    // /*check entry*/
-    // if(entry.info->state == ENTRY_OCCUPIED) {
-    //     /*check dup*/
-    //     if(!memcmp(entry.key, key, obj->key_size)) {
-    //         return entry.value;
-    //     } 
-    // }
+    hash = hash_func(key, obj->key_size);
+    cur_index = hash % obj->mem_size;
+    entry = get_entry(obj, cur_index);
+    /*check entry*/
+    if(entry.info->state == ENTRY_OCCUPIED) {
+        if(is_duplicate(obj,&entry, &sel_entry)) return entry.value;
+    }
 
     /*others*/
     uint64_t i = 0;
@@ -220,11 +229,7 @@ uint8_t* find_double(map_double_ptr obj, const uint8_t* key) {
         entry = get_entry(obj, cur_index);
         /*check entry*/
         if(entry.info->state == ENTRY_OCCUPIED) {
-            /*check dup*/
-            if(!memcmp(entry.key, key, obj->key_size)) {
-
-                return entry.value;
-            } 
+            if(is_duplicate(obj,&entry, &sel_entry)) return entry.value;
         }
     }
     
@@ -232,37 +237,36 @@ uint8_t* find_double(map_double_ptr obj, const uint8_t* key) {
 }
 
 uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
+    uint64_t hash;
+    uint64_t cur_index;
+    entry_t entry;
+    entry_t sel_entry = {.hash = &hash, .key = key};
+
     /* 1st probe */
-    uint64_t hash = fnv1a_64(key, obj->key_size);
-    uint64_t cur_index = hash % obj->mem_size;
-    entry_t entry = get_entry(obj, cur_index);
-    uint64_t first_index =  cur_index;
+    hash = fnv1a_64(key, obj->key_size);
+    cur_index = hash % obj->mem_size;
+    entry = get_entry(obj, cur_index);
     /*check entry*/
     if(entry.info->state == ENTRY_OCCUPIED) {
-        /*check dup*/
-        if(!memcmp(entry.key, key, obj->key_size)) {
+         if(is_duplicate(obj,&entry, &sel_entry)){
             entry.info->state = ENTRY_DELETED;
             _Sync_decrement(&obj->count);
             return MAP_SUCCESS;
-        } 
+         }
     }
 
     /* 2nd probe */
-    // uint64_t hash2 = hash_func(key, obj->key_size);
-    // uint64_t page_size_in_entry = (get_page_size()/(/*entry size*/obj->key_size+obj->val_size));
-    // uint64_t index_offset = hash % page_size_in_entry;
-    // uint64_t page_address = cur_index & ~((page_size_in_entry-1));
-    // cur_index = page_address + index_offset;
-
-    // /*check entry*/
-    // if(entry.info->state == ENTRY_OCCUPIED) {
-    //     /*check dup*/
-    //     if(!memcmp(entry.key, key, obj->key_size)) {
-    //         entry.info->state = ENTRY_DELETED;
-    //         _Sync_decrement(&obj->count);
-    //         return MAP_SUCCESS;
-    //     } 
-    // }
+    hash = hash_func(key, obj->key_size);
+    cur_index = hash % obj->mem_size;
+    entry = get_entry(obj, cur_index);
+    /*check entry*/
+    if(entry.info->state == ENTRY_OCCUPIED) {
+        if(is_duplicate(obj,&entry, &sel_entry)){
+            entry.info->state = ENTRY_DELETED;
+            _Sync_decrement(&obj->count);
+            return MAP_SUCCESS;
+         }
+    }
 
     /*others*/
     uint64_t i = 0;
@@ -271,12 +275,11 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
         entry = get_entry(obj, cur_index);
         /*check entry*/
         if(entry.info->state == ENTRY_OCCUPIED) {
-            /*check dup*/
-            if(!memcmp(entry.key, key, obj->key_size)) {
+            if(is_duplicate(obj,&entry, &sel_entry)){
                 entry.info->state = ENTRY_DELETED;
                 _Sync_decrement(&obj->count);
                 return MAP_SUCCESS;
-            } 
+            }
         }
     }
 
