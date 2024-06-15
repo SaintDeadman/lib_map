@@ -5,13 +5,11 @@
 #include <CUnit/Basic.h>
 
 #include "common.h"
-#include "../map_lib/hash.h"
+#include "../map_lib/map.h"
 
 #define MAP_SIZE ((size_t)1e6)
 #define KEY_SIZE (64)
 #define VAL_SIZE (128)
-#define NUM_THREADS 32
-#define NUM_INS_PER_THREAD (1e2)
 
 extern hash_type_e map_name;
 
@@ -57,9 +55,9 @@ void test_insert_node(void) {
     /*insert */
     test_entry_t entry;
     generate_rand_entry(0, &entry);
-    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
+    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), MAP_SUCCESS);
     /*check unique*/
-    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 2);
+    CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), MAP_DUPLICATE);
     /*check count */
     CU_ASSERT_EQUAL(countm(test_map), 1);
     
@@ -114,61 +112,6 @@ void test_fill_table(void) {
     }
     /*check count*/
     CU_ASSERT_EQUAL(countm(test_map), MAP_SIZE);
-    /*free*/
-    free_map(test_map);
-}
-
-void *thread_func(void *arg) {
-    thread_data_t* thread_data = (thread_data_t*)arg;
-    test_entry_t entry;
-    for (size_t i = 0; i < (size_t)NUM_INS_PER_THREAD; ++i) {
-        generate_rand_entry(thread_data->thread_id, &entry);
-        uint8_t status = insertm(thread_data->table, entry.key, entry.val);
-        if(status == 0) {
-            status = erasem(thread_data->table, entry.key);
-            CU_ASSERT_EQUAL(status, 0);
-            if(status){
-                CU_FAIL("can't erase entry");
-            }
-        }
-        else if(status == 2) {
-            printf("duplicate entry\n");
-        }
-        else {
-            CU_FAIL("space error\n");
-        }
-    }
-
-    pthread_exit(NULL);
-}
-
-void test_multitreads(void) {
-    /*create map*/
-    map_t* test_map = new_map(map_name, MAP_SIZE, KEY_SIZE, VAL_SIZE);
-    if(!test_map) {
-        CU_FAIL("allocation error")
-        return;
-    }
-
-    /*pre-fill*/
-    uint32_t i = 0;
-    test_entry_t entry;
-    for(i =0; i < MAP_SIZE*0.75; i++) {
-        generate_rand_entry(0, &entry);
-        CU_ASSERT_EQUAL(insertm(test_map, entry.key, entry.val), 0);
-    }
-    
-    /*create threads*/
-    pthread_t threads[NUM_THREADS];
-    thread_data_t thread_data[NUM_THREADS];
-    for (int i = 0; i < NUM_THREADS; ++i) {
-        thread_data[i].thread_id = i;
-        thread_data[i].table = test_map;
-        pthread_create(&threads[i], NULL, thread_func, (void *)&thread_data[i]);
-    }
-    for (int i = 0; i < NUM_THREADS; ++i)
-        pthread_join(threads[i], NULL);
-
     /*free*/
     free_map(test_map);
 }

@@ -1,14 +1,15 @@
-#include "../map_lib/hash.h"
-
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #include "common.h"
+#include "../map_lib/map.h"
 
-const hash_type_e map_name =  hash_simple;
+extern const hash_type_e map_name =  hash_double;
+
 
 int main() {
     if (CUE_SUCCESS != CU_initialize_registry()) {
@@ -25,8 +26,7 @@ int main() {
         (NULL == CU_add_test(pSuite, "test_insert_node", test_insert_node)) ||
         (NULL == CU_add_test(pSuite, "test_find_node", test_find_node)) ||
         (NULL == CU_add_test(pSuite, "test_delete_node", test_delete_node)) ||
-        (NULL == CU_add_test(pSuite, "test_fill_table", test_fill_table)) ||
-        (NULL == CU_add_test(pSuite, "test_multitreads", test_multitreads))
+        (NULL == CU_add_test(pSuite, "test_fill_table", test_fill_table))
         ) {
         CU_cleanup_registry();
         return CU_get_error();

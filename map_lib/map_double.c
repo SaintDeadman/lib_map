@@ -1,11 +1,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include "hash.h"
+#include "map.h"
 #include "map_double.h"
 #include "misc/allocator.h"
 #include "misc/sync.h"
 #include "misc/hashes.h"
+#include "misc/misc.h"
 
 typedef struct {
     uint32_t state;
@@ -23,10 +24,12 @@ typedef struct map_double {
     size_t mem_size;
     size_t key_size;
     size_t val_size;
+    size_t ent_size;
     void* mem;
-    entry_info_t* sync_data;
     _Sync size_t count;
+    _Sync size_t count_inserts;
     _Sync size_t count_lock_error;
+    _Sync size_t count_collision;
 } map_double_t;
 
 #define ENTRY_FREE      0
@@ -40,23 +43,14 @@ map_double_ptr new_double_map(const size_t map_size, const size_t key_size, cons
     memset(map, 0x0, sizeof(map_double_t));
 
     /*fill struct*/
-    map->mem_size = map_size;
+    map->mem_size = 1 << (bitScanReverse(map_size)+1);
     map->key_size = key_size;
     map->val_size = val_size;
-    map->count = 0;
+    map->ent_size = sizeof(entry_info_t) + sizeof(uint64_t) + map->key_size + map->val_size;
 
     /*allocate mem to nodes*/
-    size_t entry_size = sizeof(uint64_t) + map->key_size + map->val_size;
-    map->mem = allocate_memory(entry_size*map_size);
+    map->mem = allocate_memory(map->ent_size*map->mem_size);
     if(map->mem == 0) {
-        free(map);
-        return NULL;
-    }
-
-    /*allocate mem to ctrl structs*/
-    map->sync_data = allocate_memory(map_size*sizeof(entry_info_t));
-    if(map->sync_data == 0) {
-        free(map->mem);
         free(map);
         return NULL;
     }
@@ -64,26 +58,25 @@ map_double_ptr new_double_map(const size_t map_size, const size_t key_size, cons
 }
 
 void free_double_map(map_double_ptr map) {
-    deallocate_memory(map->sync_data, map->mem_size*sizeof(entry_info_t));
-    deallocate_memory(map->mem, map->mem_size*(sizeof(uint64_t) + map->key_size + map->val_size));
+    deallocate_memory(map->mem, map->mem_size*map->ent_size);
     free(map);
 }
 
 /*=============================================================*/
-static inline entry_t get_entry(map_double_ptr map, uint64_t index) {
-    uint64_t ent_size = sizeof(uint64_t) + map->key_size+map->val_size;
-    entry_t ent = {
-                .info = &map->sync_data[index],
-                .hash = (uint8_t*)(map->mem + index*ent_size), 
-                .key = (uint8_t*)(map->mem + index*ent_size + sizeof(uint64_t)),
-                .value = (uint8_t*)(map->mem + index*ent_size + map->key_size + sizeof(uint64_t) ) };
-    return ent;
+static inline void get_entry(const map_double_ptr map, entry_t* entry, const const uint64_t index) {
+    const size_t entry_offset = index * map->ent_size;
+    const uint8_t *mem_ptr = (uint8_t *)(map->mem + entry_offset);
+    __builtin_prefetch(mem_ptr);
+    entry->info = mem_ptr;
+    entry->hash = mem_ptr+sizeof(entry_info_t);
+    entry->key = entry->hash + sizeof(uint64_t);
+    entry->value = entry->key + map->key_size;
 }
 
-static inline void update_entry(map_double_ptr map, entry_t entry, const entry_t* new_entry) {
-    memcpy(entry.hash, new_entry->hash,sizeof(uint64_t));
-    memcpy(entry.key, new_entry->key, map->key_size);
-    memcpy(entry.value, new_entry->value, map->val_size);
+static inline void copy_entry(map_double_ptr map, entry_t* dest_entry, const entry_t* src_entry) {
+    memcpy(dest_entry->hash, src_entry->hash,sizeof(uint64_t));
+    memcpy(dest_entry->key, src_entry->key, map->key_size);
+    memcpy(dest_entry->value, src_entry->value, map->val_size);
 }
 
 static inline bool is_duplicate(map_double_ptr map, entry_t* first, const entry_t* second) {
@@ -94,10 +87,15 @@ static inline bool is_duplicate(map_double_ptr map, entry_t* first, const entry_
     return true;
 }
 
+static inline uint64_t hash_to_index(map_double_ptr map, uint64_t hash){
+    return hash & (map->mem_size-1);
+}
+
 static inline uint8_t insert_entry(map_double_ptr obj, uint64_t index, entry_t* ins_entry) {
     
     /*get entry*/
-    entry_t entry = get_entry(obj, index);
+    entry_t entry; 
+    get_entry(obj, &entry, index);
 
     /*check entry*/
     if(entry.info->state == ENTRY_OCCUPIED) {
@@ -112,7 +110,7 @@ static inline uint8_t insert_entry(map_double_ptr obj, uint64_t index, entry_t* 
     }
     
     /*update entry*/
-    update_entry(obj, entry, ins_entry);
+    copy_entry(obj, &entry, ins_entry);
     
     /*unlock*/
     _Sync_increment(&obj->count);  
@@ -122,13 +120,15 @@ static inline uint8_t insert_entry(map_double_ptr obj, uint64_t index, entry_t* 
 }
 
 static void print_entry(map_double_ptr map, uint64_t index) {
-    entry_t entry = get_entry(map, index);
+    entry_t entry; 
+    get_entry(map,&entry, index);
     printf("[%zu] key %p value %p\n", index, entry.key, entry.value);
 }
 
 static void print_key(map_double_ptr map, uint64_t index) {
     size_t i;
-    entry_t entry = get_entry(map, index);
+    entry_t entry; 
+    get_entry(map,&entry, index);
     printf("[%zu] key = ", index);
     for(i=0;i<map->key_size;i++)
         printf("%02X", entry.key[i]);
@@ -144,25 +144,26 @@ uint8_t insert_double(map_double_ptr obj, const uint8_t* key, const uint8_t* val
     uint64_t cur_index;
     uint8_t status;
     entry_t ins_entry = {.hash = &hash, .key = key, .value = value};
-
+    _Sync_increment(&obj->count_inserts);
     /*---------------1st probe-----------------*/
-    hash = fnv1a_64(key, obj->key_size);
-    cur_index = hash % obj->mem_size;
+    hash = xxhash64(key, obj->key_size);
+    cur_index = hash_to_index(obj, hash);
     status = insert_entry(obj, cur_index, &ins_entry);
     if(status != MAP_ERROR) return status;
-
+    _Sync_increment(&obj->count_collision);
     /*---------------2nd probe-----------------*/
-    hash = hash_func(key, obj->key_size);
-    cur_index = hash % obj->mem_size;
+    hash = mod_hash(key, obj->key_size);
+    cur_index = hash_to_index(obj, hash);
     status = insert_entry(obj, cur_index, &ins_entry);
     if(status != MAP_ERROR) return status;
-
+    _Sync_increment(&obj->count_collision);
     /*---------------others-----------------*/
     uint64_t i = 0;
-    for(i = 0; i < obj->mem_size; i++) {
-        cur_index = (cur_index+1) % obj->mem_size;
+    for(i = 0; i < obj->mem_size; i++, cur_index++) {
+        cur_index = hash_to_index(obj, cur_index+1);
         status = insert_entry(obj, cur_index, &ins_entry);
         if(status != MAP_ERROR) return status;
+        _Sync_increment(&obj->count_collision);
     }
 
     return MAP_ERROR;
@@ -175,29 +176,26 @@ uint8_t* find_double(map_double_ptr obj, const uint8_t* key) {
     entry_t sel_entry = {.hash = &hash, .key = key};
 
     /*---------------1st probe-----------------*/
-    hash = fnv1a_64(key, obj->key_size);
-    cur_index = hash % obj->mem_size;
-    entry = get_entry(obj, cur_index);
-    /*check entry*/
+    hash = xxhash64(key, obj->key_size);
+    cur_index = hash_to_index(obj, hash);
+    get_entry(obj,&entry, cur_index);
     if(entry.info->state == ENTRY_OCCUPIED) {
         if(is_duplicate(obj,&entry, &sel_entry)) return entry.value; 
     }
 
     /*---------------2nd probe-----------------*/
-    hash = hash_func(key, obj->key_size);
-    cur_index = hash % obj->mem_size;
-    entry = get_entry(obj, cur_index);
-    /*check entry*/
+    hash = mod_hash(key, obj->key_size);
+    cur_index = hash_to_index(obj, hash);
+    get_entry(obj,&entry, cur_index);
     if(entry.info->state == ENTRY_OCCUPIED) {
         if(is_duplicate(obj,&entry, &sel_entry)) return entry.value;
     }
 
     /*---------------others-----------------*/
     uint64_t i = 0;
-    for(i = 0; i < obj->mem_size; i++) {
-        cur_index = (cur_index+1) % obj->mem_size;
-        entry = get_entry(obj, cur_index);
-        /*check entry*/
+    for(i = 0; i < obj->mem_size; i++, cur_index++) {
+        cur_index = hash_to_index(obj, cur_index+1);
+        get_entry(obj,&entry, cur_index);
         if(entry.info->state == ENTRY_OCCUPIED) {
             if(is_duplicate(obj,&entry, &sel_entry)) return entry.value;
         }
@@ -213,10 +211,9 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
     entry_t sel_entry = {.hash = &hash, .key = key};
 
     /*---------------1st probe-----------------*/
-    hash = fnv1a_64(key, obj->key_size);
-    cur_index = hash % obj->mem_size;
-    entry = get_entry(obj, cur_index);
-    /*check entry*/
+    hash = xxhash64(key, obj->key_size);
+    cur_index = hash_to_index(obj, hash);
+    get_entry(obj, &entry, cur_index);
     if(entry.info->state == ENTRY_OCCUPIED) {
          if(is_duplicate(obj,&entry, &sel_entry)){
             entry.info->state = ENTRY_DELETED;
@@ -226,10 +223,9 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
     }
 
    /*---------------2nd probe-----------------*/
-    hash = hash_func(key, obj->key_size);
-    cur_index = hash % obj->mem_size;
-    entry = get_entry(obj, cur_index);
-    /*check entry*/
+    hash = mod_hash(key, obj->key_size);
+    cur_index = hash_to_index(obj, hash);
+    get_entry(obj,&entry, cur_index);
     if(entry.info->state == ENTRY_OCCUPIED) {
         if(is_duplicate(obj,&entry, &sel_entry)){
             entry.info->state = ENTRY_DELETED;
@@ -240,10 +236,9 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
 
     /*---------------others-----------------*/
     uint64_t i = 0;
-    for(i = 0; i < obj->mem_size; i++) {
-        cur_index = (cur_index+1) % obj->mem_size;
-        entry = get_entry(obj, cur_index);
-        /*check entry*/
+    for(i = 0; i < obj->mem_size; i++,cur_index++) {
+        cur_index = hash_to_index(obj, cur_index+1);
+        get_entry(obj, &entry, cur_index);
         if(entry.info->state == ENTRY_OCCUPIED) {
             if(is_duplicate(obj,&entry, &sel_entry)){
                 entry.info->state = ENTRY_DELETED;
@@ -258,4 +253,10 @@ uint8_t erase_double(map_double_ptr obj, const uint8_t* key) {
 
 size_t count_double(map_double_ptr obj) {
     return obj->count;
+}
+
+void get_stat_double(const map_double_ptr map, map_counters_t* statistic) {
+    statistic->insert = map->count_inserts;
+    statistic->collisions = map->count_collision;
+    statistic->lock_errors = map->count_lock_error;
 }

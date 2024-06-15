@@ -39,5 +39,12 @@ uint8_t erase_mock(const void* map, const uint8_t* key) {
 
 size_t count_mock(const void* map) {
     UNUSED(map);
+    printf("count function is undefined\n\r");
     return 0;
+}
+
+void get_stat_mock(const void* map, map_counters_t* statistic) {
+    UNUSED(map);
+    UNUSED(statistic);
+    printf("get stat function is undefined\n\r");
 }

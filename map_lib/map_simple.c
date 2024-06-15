@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
-#include "hash.h"
+#include "map.h"
 #include "map_simple.h"
 #include "misc/allocator.h"
 #include "misc/sync.h"
@@ -31,7 +31,9 @@ typedef struct map_simple {
     void* mem;
     entry_info_t* sync_data;
     _Sync size_t count;
+    _Sync size_t count_inserts;
     _Sync size_t count_lock_error;
+    _Sync size_t count_collision;
 } map_simple_t;
 
 /*===================================================
@@ -107,8 +109,8 @@ static void print_key(map_simple_ptr map, uint64_t index) {
 ======================================================*/
 uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* value) {
     uint64_t i;
-    /*here we can using map of hashes*/
-    uint64_t hash = hash_func(key, obj->key_size);
+    _Sync_increment(&obj->count_inserts);
+    uint64_t hash = mod_hash(key, obj->key_size);
     uint64_t cur_index =  hash % obj->mem_size;
     for(i = 0; i < obj->mem_size; i++, cur_index = (cur_index+1) % obj->mem_size) { 
         /*get entry*/
@@ -127,6 +129,7 @@ uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* val
                 return MAP_DUPLICATE;
             }
             entry.info->used = 0;
+            _Sync_increment(&obj->count_collision);
             continue; 
         }
 
@@ -145,7 +148,7 @@ uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* val
 }
 
 uint8_t* find_simple(map_simple_ptr obj, const uint8_t* key) {
-    uint64_t hash = hash_func(key, obj->key_size);
+    uint64_t hash = mod_hash(key, obj->key_size);
     uint64_t cur_index =  hash % obj->mem_size;
     uint64_t i;
     
@@ -162,7 +165,7 @@ uint8_t* find_simple(map_simple_ptr obj, const uint8_t* key) {
 }
 
 uint8_t erase_simple(map_simple_ptr obj, const uint8_t* key) {
-    uint64_t hash = hash_func(key, obj->key_size);
+    uint64_t hash = mod_hash(key, obj->key_size);
     uint64_t cur_index =  hash % obj->mem_size;
     uint64_t i;
     
@@ -184,4 +187,9 @@ uint8_t erase_simple(map_simple_ptr obj, const uint8_t* key) {
 
 size_t count_simple(map_simple_ptr obj) {
     return obj->count;
+}
+void get_stat_simple(const map_simple_ptr map, map_counters_t* statistic) {
+    statistic->insert = map->count_inserts;
+    statistic->collisions = map->count_collision;
+    statistic->lock_errors = map->count_lock_error;
 }

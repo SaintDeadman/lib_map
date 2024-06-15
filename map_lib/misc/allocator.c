@@ -1,5 +1,7 @@
 #include <stdlib.h>
 #include "allocator.h" 
+#include <errno.h>
+#include <string.h>
 
 #ifdef _WIN32
     #include <Windows.h>
@@ -46,6 +48,9 @@ void deallocate_memory(void* ptr, size_t size) {
 #elif __linux__
     size_t page_size = get_page_size();
     size_t rounded_size = (size + page_size - 1) & ~(page_size - 1);
-    munmap(ptr, rounded_size);
+    if(munmap(ptr, rounded_size) == -1)
+    {
+        printf("free ptr[%p] size[%zu] %s\n", ptr, size, strerror(errno));
+    }
 #endif
 }

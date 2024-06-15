@@ -10,6 +10,6 @@ uint8_t insert_double(map_double_ptr obj, const uint8_t* key, const uint8_t* val
 uint8_t* find_double(map_double_ptr obj, const uint8_t* key);
 uint8_t erase_double(map_double_ptr obj, const uint8_t* key);
 size_t count_double(map_double_ptr obj);
-
+void get_stat_double(const map_double_ptr map, map_counters_t* statistic);
 
 #endif //_MAP_DOUBLE_H_

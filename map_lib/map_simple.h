@@ -13,5 +13,6 @@ uint8_t insert_simple(map_simple_ptr obj, const uint8_t* key, const uint8_t* val
 uint8_t* find_simple(map_simple_ptr obj, const uint8_t* key);
 uint8_t erase_simple(map_simple_ptr obj, const uint8_t* key);
 size_t count_simple(map_simple_ptr obj);
+void get_stat_simple(const map_simple_ptr map, map_counters_t* statistic);
 
 #endif //_MAP_SIMPLE_H_

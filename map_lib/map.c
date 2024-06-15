@@ -1,6 +1,6 @@
 #include <stddef.h>
 #include <stdlib.h>
-#include "hash.h"
+#include "map.h"
 #include "map_mock.h"
 #include "map_simple.h"
 #include "map_double.h"
@@ -43,6 +43,12 @@ size_t (*count_fn[])(const void* obj) = {
     [hash_simple...hash_dummy] = count_mock,
     [hash_simple] = (size_t (*)(void *))count_simple,
     [hash_double] = (size_t (*)(void *))count_double
+};
+
+void (*stat_fn[])(const void* obj, map_counters_t* ) = {
+    [hash_simple...hash_dummy] = get_stat_mock,
+    [hash_simple] = (void (*)(void *,map_counters_t*))get_stat_simple,
+    [hash_double] = (void (*)(void *,map_counters_t*))get_stat_double
 };
 
 /*
@@ -92,4 +98,9 @@ uint8_t erasem(const map_t* map, const uint8_t* key) {
 size_t countm(const map_t* map) {
     if(!map) return 0;
     return count_fn[map->type](map->obj);
+}
+
+void getstatm(const map_t* map, map_counters_t* statistic) {
+    if(!map) return 0;
+    stat_fn[map->type](map->obj, statistic);
 }
