@@ -39,7 +39,7 @@ To run the tests, use the following commands:
 ./bin/run_messuring_double
 ```
 
-# Constreint
+# Constraints
 - The project has not been tested on Windows. It is likely that it won't build on this platform.
 
 
