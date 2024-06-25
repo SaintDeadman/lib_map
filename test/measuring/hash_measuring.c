@@ -22,7 +22,7 @@ static void generate_random_keys_pack(unsigned int seed, unsigned char *key, siz
 #define KEYS_PER_PACK (1024)
 
 
-static void avr_messuring(char* name, uint64_t(*hash_fn)(uint8_t*,size_t)) {
+static void avr_measuring(char* name, uint64_t(*hash_fn)(uint8_t*,size_t)) {
     int64_t num_key, it = 0;
     uint8_t keys [KEYS_PER_PACK][KEY_SIZE];
     clock_t clock_start = 0;
@@ -76,13 +76,13 @@ static void measure_distribution(uint64_t (*hash_fn)(uint8_t *, size_t)) {
 
 int main ()
 {
-    avr_messuring("mod", mod_hash);
+    avr_measuring("mod", mod_hash);
     measure_distribution(mod_hash);
-    avr_messuring("fnv1a", fnv1a_hash);
+    avr_measuring("fnv1a", fnv1a_hash);
     measure_distribution(fnv1a_hash);
-    avr_messuring("rot13", rot13_hash);
+    avr_measuring("rot13", rot13_hash);
     measure_distribution(rot13_hash);
-    avr_messuring("xxhash64", xxhash64);
+    avr_measuring("xxhash64", xxhash64);
     measure_distribution(xxhash64);
     return 0;    
 }

@@ -35,8 +35,8 @@ To run the tests, use the following commands:
 ```bash
 ./bin/run_test_00
 ./bin/run_test_01
-./bin/run_messuring_simple
-./bin/run_messuring_double
+./bin/run_measuring_simple
+./bin/run_measuring_double
 ```
 
 # Constraints

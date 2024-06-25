@@ -22,4 +22,4 @@ include_directories(${CUNIT_INCLUDE_DIR})
 
 # Добавляем подпапки для сборки
 add_subdirectory(behavior)
-add_subdirectory(messuring)
+add_subdirectory(measuring)
