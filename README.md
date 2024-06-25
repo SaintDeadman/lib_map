@@ -13,6 +13,7 @@ Three types of tables have been implemented:
 1) *Mock Table*: This is a stub table used to implement the default map API. It serves as a basic placeholder for testing purposes.
 2) *Simple Table*: This table acts as a reference implementation with open addressing. It is used for comparison and validation of the main table.
 3) *Double Table*: This is the main table implementation, featuring double hashing for improved performance and collision handling.
+4) *Std Table*: This table is based on the STL (Standard Template Library) implementation.
 
 # Tests
 Two types of tests have been implemented to ensure the correctness and performance of the tables:
@@ -35,8 +36,10 @@ To run the tests, use the following commands:
 ```bash
 ./bin/run_test_00
 ./bin/run_test_01
+./bin/run_test_02
 ./bin/run_measuring_simple
 ./bin/run_measuring_double
+./bin/run_measuring_std
 ```
 
 # Constraints
