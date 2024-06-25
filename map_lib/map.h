@@ -7,6 +7,7 @@
 typedef enum{
     hash_simple = 0,
     hash_double,
+    hash_std,
     hash_dummy
 } hash_type_e;
 

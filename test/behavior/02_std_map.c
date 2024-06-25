@@ -8,7 +8,7 @@
 #include "common.h"
 #include "../map_lib/map.h"
 
-extern const hash_type_e map_name =  hash_double;
+extern const hash_type_e map_name =  hash_std;
 
 
 int main() {
@@ -16,7 +16,7 @@ int main() {
         return CU_get_error();
     }
 
-    CU_pSuite pSuite = CU_add_suite("DoubleTestSuite", 0, 0);
+    CU_pSuite pSuite = CU_add_suite("StdTestSuite", 0, 0);
     if (NULL == pSuite) {
         CU_cleanup_registry();
         return CU_get_error();

@@ -3,6 +3,7 @@ project(map)
 
 file(GLOB SOURCES 
     "*.c"
+    "*.cpp"
     "misc/*.c"
 )
 file(GLOB HEADERS "map.h")

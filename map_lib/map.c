@@ -4,6 +4,7 @@
 #include "map_mock.h"
 #include "map_simple.h"
 #include "map_double.h"
+#include "map_std.h"
 
 /*
 for adding a new implementation you need add new fn to this tables
@@ -12,43 +13,50 @@ for adding a new implementation you need add new fn to this tables
 void* (*new_map_fn[])(const size_t size, const size_t key_size, const size_t val_size) = {
     [hash_simple...hash_dummy] = new_mock_map,
     [hash_simple] = (void* (*)(const size_t, const size_t,const size_t))new_simple_map,
-    [hash_double] = (void* (*)(const size_t, const size_t,const size_t))new_double_map
+    [hash_double] = (void* (*)(const size_t, const size_t,const size_t))new_double_map,
+    [hash_std] = (void* (*)(const size_t, const size_t,const size_t))new_std_map,
 };
 
 void (*free_map_fn[])(void* obj) = {
     [hash_simple...hash_dummy] = free_mock_map,
     [hash_simple] = (void (*)(void *))free_simple_map,
-    [hash_double] = (void (*)(void *))free_double_map
+    [hash_double] = (void (*)(void *))free_double_map,
+    [hash_std] = (void (*)(void *))free_std_map
 };
 
 uint8_t (*insert_fn[])(const void* obj, const uint8_t* key, const uint8_t* value) = {
     [hash_simple...hash_dummy] = insert_mock,
     [hash_simple] = (uint8_t (*)(const void *, const uint8_t*, const uint8_t*))insert_simple,
-    [hash_double] = (uint8_t (*)(const void *, const uint8_t*, const uint8_t*))insert_double
+    [hash_double] = (uint8_t (*)(const void *, const uint8_t*, const uint8_t*))insert_double,
+    [hash_std] = (uint8_t (*)(const void *, const uint8_t*, const uint8_t*))insert_std
 };
 
 uint8_t* (*find_fn[])(const void* obj, const uint8_t* key) = {
     [hash_simple...hash_dummy] = find_mock,
     [hash_simple] = (uint8_t* (*)(void *,const uint8_t*))find_simple,
-    [hash_double] = (uint8_t* (*)(void *,const uint8_t*))find_double
+    [hash_double] = (uint8_t* (*)(void *,const uint8_t*))find_double,
+    [hash_std] = (uint8_t* (*)(void *,const uint8_t*))find_std
 };
 
 uint8_t (*erase_fn[])(const void* obj, const uint8_t* key) = {
     [hash_simple...hash_dummy] = erase_mock,
     [hash_simple] = (uint8_t (*)(void *, const uint8_t* key))erase_simple,
-    [hash_double] = (uint8_t (*)(void *, const uint8_t* key))erase_double
+    [hash_double] = (uint8_t (*)(void *, const uint8_t* key))erase_double,
+    [hash_std] = (uint8_t (*)(void *, const uint8_t* key))erase_std
 };
 
 size_t (*count_fn[])(const void* obj) = {
     [hash_simple...hash_dummy] = count_mock,
     [hash_simple] = (size_t (*)(void *))count_simple,
-    [hash_double] = (size_t (*)(void *))count_double
+    [hash_double] = (size_t (*)(void *))count_double,
+    [hash_std] = (size_t (*)(void *))count_std
 };
 
 void (*stat_fn[])(const void* obj, map_counters_t* ) = {
     [hash_simple...hash_dummy] = get_stat_mock,
     [hash_simple] = (void (*)(void *,map_counters_t*))get_stat_simple,
-    [hash_double] = (void (*)(void *,map_counters_t*))get_stat_double
+    [hash_double] = (void (*)(void *,map_counters_t*))get_stat_double,
+    [hash_std] = (void (*)(void *,map_counters_t*))get_stat_std
 };
 
 /*
